@@ -24,7 +24,7 @@ export class CameraComponent implements AfterViewInit {
   private videoTrack: LocalVideoTrack;
   private localTracks: LocalTrack[] = [];
 
-  constructor() {}
+  constructor(private readonly renderer: Renderer2) {}
 
   ngAfterViewInit() {
     if (this.previewElement && this.previewElement.nativeElement) {

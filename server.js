@@ -33,7 +33,7 @@ app.use(cors());
  * parameter.
  */
 app.get('/token', function (request, response) {
-  const { identity } = request.query;
+  // const { identity } = request.query;
 
   // Create an access token which we will sign and return to the client,
   // containing the grant we just created.
@@ -45,14 +45,15 @@ app.get('/token', function (request, response) {
   );
 
   // Assign the generated identity to the token.
-  token.identity = identity;
+  token.identity = new Date().toString();
 
   // Grant the access token Twilio Video capabilities.
   const grant = new VideoGrant();
+  grant.room = 'test-room';
   token.addGrant(grant);
 
   // Serialize the token to a JWT string.
-  response.send({ { token: token.toJwt() } );
+  response.send({ identity: 'david', token: token.toJwt() });
 });
 
 // Create http server and run it.
