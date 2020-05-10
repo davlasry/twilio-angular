@@ -49,7 +49,7 @@ app.get('/token', function (request, response) {
 
   // Grant the access token Twilio Video capabilities.
   const grant = new VideoGrant();
-  grant.room = 'test-room';
+  // grant.room = 'test-room';
   token.addGrant(grant);
 
   // Serialize the token to a JWT string.

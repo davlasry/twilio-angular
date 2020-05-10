@@ -50,7 +50,6 @@ export class AppComponent implements AfterViewInit {
           (t) => t.kind === 'video'
         ) as Video.LocalVideoTrack;
         if (this.videoTrack) {
-          console.log('inside videoTrack:');
           const videoElement = this.videoTrack.attach();
           this.renderer.setStyle(videoElement, 'height', '100%');
           this.renderer.setStyle(videoElement, 'width', '100%');
@@ -61,10 +60,10 @@ export class AppComponent implements AfterViewInit {
         }
 
         const connectOptions = {
-          name: 'test-room',
+          name: 'test-room-3',
           tracks: localTracks,
           video: { width: 300 },
-          // logLevel: 'debug',
+          logLevel: 'debug',
         };
 
         // Join the Room with the token from the server and the
@@ -81,5 +80,51 @@ export class AppComponent implements AfterViewInit {
   roomJoined(room) {
     this.activeRoom = room;
     console.log('room:', this.activeRoom);
+
+    room.on('trackRemoved', (track, participant) => {
+      console.log(participant.identity + ' removed track: ' + track.kind);
+      this.detachTracks([track]);
+    });
+
+    // Attach the Tracks of the Room's Participants.
+    room.participants.forEach((participant) => {
+      console.log("Already in Room: '" + participant.identity + "'");
+      const previewContainer = document.getElementById('remote-media');
+      this.attachParticipantTracks(participant, previewContainer);
+    });
+
+    // When a Participant joins the Room, log the event.
+    room.on('participantConnected', (participant) => {
+      console.log("Joining: '" + participant.identity + "'");
+    });
+  }
+
+  attachTracks(tracks, container) {
+    console.log('tracks:', tracks);
+    tracks.forEach((track) => {
+      // this.renderer.appendChild(
+      //   this.previewElement.nativeElement,
+      //   track.attach()
+      // );
+    });
+  }
+
+  attachParticipantTracks(participant, container) {
+    console.log('participant:', participant);
+    const tracks = Array.from(participant.tracks.values());
+    this.attachTracks(tracks, container);
+  }
+
+  detachTracks(tracks) {
+    tracks.forEach((track) => {
+      track.detach().forEach((detachedElement) => {
+        detachedElement.remove();
+      });
+    });
+  }
+
+  detachParticipantTracks(participant) {
+    const tracks = Array.from(participant.tracks.values());
+    this.detachTracks(tracks);
   }
 }
