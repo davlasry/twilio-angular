@@ -1,130 +1,151 @@
-import {
-  Component,
-  OnInit,
-  Renderer2,
-  ElementRef,
-  ViewChild,
-  AfterViewInit,
-} from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { environment } from '../environments/environment';
+import { AfterViewInit, Component, ElementRef, Renderer2, ViewChild, } from '@angular/core';
 import Video from 'twilio-video';
+import { VideoChatService } from "./services/videochata.service";
 
 @Component({
-  selector: 'app-root',
-  templateUrl: './app.component.html',
-  styleUrls: ['./app.component.scss'],
+    selector: 'app-root',
+    templateUrl: './app.component.html',
+    styleUrls: ['./app.component.scss'],
 })
 export class AppComponent implements AfterViewInit {
-  @ViewChild('preview', { static: false }) previewElement: ElementRef;
+    @ViewChild('preview', {static: false}) previewElement: ElementRef;
 
-  apiBaseUrl = environment.apiBaseUrl;
-  token: string;
-  activeRoom;
+    private activeRoom;
+    private roomName = 'test-room-3';
+    private participants: Map<Video.Participant.SID, Video.RemoteParticipant>;
+    private videoTrack: Video.LocalVideoTrack;
+    private localTracks: Video.LocalTrack[] = [];
 
-  private videoTrack: Video.LocalVideoTrack;
-  private localTracks: Video.LocalTrack[] = [];
+    constructor(private readonly renderer: Renderer2,
+                private videochatService: VideoChatService) {
+        window.addEventListener('beforeunload', () => {
+            this.activeRoom.disconnect();
+        });
+    }
 
-  constructor(private http: HttpClient, private readonly renderer: Renderer2) {}
-
-  ngAfterViewInit() {
-    this.http
-      .get(`${this.apiBaseUrl}/token`)
-      .subscribe(async (results: any) => {
-        /* Make an API call to get the token and identity(fake name) and  update the corresponding state variables. */
-        const { identity, token } = results;
-        console.log('identity:', identity);
-        this.token = token;
-        console.log('this.token:', this.token);
-        console.log('results:', results);
-
+    async ngAfterViewInit() {
         const videoOptions = {
-          audio: true,
-          video: true,
+            audio: true,
+            video: true,
         };
 
-        const localTracks = await Video.createLocalTracks(videoOptions);
-        console.log('localTracks:', localTracks);
+        this.localTracks = await Video.createLocalTracks(videoOptions);
 
-        this.videoTrack = localTracks.find(
-          (t) => t.kind === 'video'
+        this.videoTrack = this.localTracks.find(
+            (track) => track.kind === 'video'
         ) as Video.LocalVideoTrack;
+
         if (this.videoTrack) {
-          const videoElement = this.videoTrack.attach();
-          this.renderer.setStyle(videoElement, 'height', '100%');
-          this.renderer.setStyle(videoElement, 'width', '100%');
-          this.renderer.appendChild(
-            this.previewElement.nativeElement,
-            videoElement
-          );
+            const videoElement = this.videoTrack.attach();
+            this.renderer.setStyle(videoElement, 'height', '200px');
+            this.renderer.setStyle(videoElement, 'width', '200px');
+            this.renderer.setStyle(videoElement, 'border', '2px solid blue');
+            this.renderer.appendChild(
+                this.previewElement.nativeElement,
+                videoElement
+            );
         }
 
-        const connectOptions = {
-          name: 'test-room-3',
-          tracks: localTracks,
-          video: { width: 300 },
-          logLevel: 'debug',
-        };
+        this.activeRoom = await this.videochatService.joinOrCreateRoom(this.roomName, this.localTracks);
 
-        // Join the Room with the token from the server and the
-        // LocalParticipant's Tracks.
-        await Video.connect(this.token, connectOptions).then(
-          this.roomJoined.bind(this),
-          (error) => {
-            console.log('Could not connect to Twilio: ' + error.message);
-          }
-        );
-      });
-  }
+        this.initialize(this.activeRoom.participants);
+        this.registerRoomEvents();
+    }
 
-  roomJoined(room) {
-    this.activeRoom = room;
-    console.log('room:', this.activeRoom);
+    initialize(participants: Map<Video.Participant.SID, Video.RemoteParticipant>) {
+        this.participants = participants;
+        if (this.participants) {
+            this.participants.forEach(participant => this.registerParticipantEvents(participant));
+        }
+    }
 
-    room.on('trackRemoved', (track, participant) => {
-      console.log(participant.identity + ' removed track: ' + track.kind);
-      this.detachTracks([track]);
-    });
+    private registerRoomEvents() {
+        console.log('registerRoomEvents');
+        this.activeRoom
+            // .on('disconnected',
+            //   (room: Video.Room) => room.localParticipant.tracks.forEach(publication => this.detachLocalTrack(publication.track)))
+            .on('participantConnected',
+                (participant: Video.RemoteParticipant) => this.add(participant))
+            .on('participantDisconnected',
+                (participant: Video.RemoteParticipant) => this.remove(participant))
+        // .on('dominantSpeakerChanged',
+        //   (dominantSpeaker: Video.RemoteParticipant) => this.loudest(dominantSpeaker));
+    }
 
-    // Attach the Tracks of the Room's Participants.
-    room.participants.forEach((participant) => {
-      console.log("Already in Room: '" + participant.identity + "'");
-      const previewContainer = document.getElementById('remote-media');
-      this.attachParticipantTracks(participant, previewContainer);
-    });
+    add(participant: Video.RemoteParticipant) {
+        console.log('add participant', participant);
+        if (this.participants && participant) {
+            this.participants.set(participant.sid, participant);
+            this.registerParticipantEvents(participant);
+        }
+    }
 
-    // When a Participant joins the Room, log the event.
-    room.on('participantConnected', (participant) => {
-      console.log("Joining: '" + participant.identity + "'");
-    });
-  }
+    remove(participant: Video.RemoteParticipant) {
+        console.log('remove participant', participant);
+        if (this.participants && this.participants.has(participant.sid)) {
+            this.participants.delete(participant.sid);
+        }
+    }
 
-  attachTracks(tracks, container) {
-    console.log('tracks:', tracks);
-    tracks.forEach((track) => {
-      // this.renderer.appendChild(
-      //   this.previewElement.nativeElement,
-      //   track.attach()
-      // );
-    });
-  }
+    registerParticipantEvents(participant) {
+        console.log('registerParticipantEvents', participant);
+        if (participant) {
+            participant.tracks.forEach(publication => this.subscribe(publication));
+            participant.on('trackPublished', publication => this.subscribe(publication));
+            participant.on('trackUnpublished',
+                publication => {
+                    if (publication && publication.track) {
+                        this.detachRemoteTrack(publication.track);
+                    }
+                });
+        }
+    }
 
-  attachParticipantTracks(participant, container) {
-    console.log('participant:', participant);
-    const tracks = Array.from(participant.tracks.values());
-    this.attachTracks(tracks, container);
-  }
+    attachRemoteTrack(track) {
+        console.log('attach track:', track);
+        if (this.isAttachable(track)) {
+            const element = track.attach();
+            this.renderer.setStyle(element, 'height', '200px');
+            this.renderer.setStyle(element, 'width', '200px');
 
-  detachTracks(tracks) {
-    tracks.forEach((track) => {
-      track.detach().forEach((detachedElement) => {
-        detachedElement.remove();
-      });
-    });
-  }
+            this.renderer.appendChild(
+                this.previewElement.nativeElement,
+                element
+            );
+        }
+    }
 
-  detachParticipantTracks(participant) {
-    const tracks = Array.from(participant.tracks.values());
-    this.detachTracks(tracks);
-  }
+    private subscribe(publication: Video.RemoteTrackPublication | any) {
+        if (publication && publication.on) {
+            publication.on('subscribed', track => this.attachRemoteTrack(track));
+            publication.on('unsubscribed', track => this.detachRemoteTrack(track));
+        }
+    }
+
+    detachRemoteTrack(track) {
+        console.log('detachRemoteTrack');
+        track.detach().forEach((detachedElement) => {
+            detachedElement.remove();
+        });
+    }
+
+    private isDetachable(track: Video.RemoteTrack): track is Video.RemoteAudioTrack | Video.RemoteVideoTrack {
+        return !!track &&
+            ((track as Video.RemoteAudioTrack).detach !== undefined ||
+                (track as Video.RemoteVideoTrack).detach !== undefined);
+    }
+
+    private isAttachable(track: Video.RemoteTrack): track is Video.RemoteAudioTrack | Video.RemoteVideoTrack {
+        return !!track &&
+            ((track as Video.RemoteAudioTrack).attach !== undefined ||
+                (track as Video.RemoteVideoTrack).attach !== undefined);
+    }
+
+    onLeaveRoom() {
+        console.log('onLeaveRoom');
+        if (this.activeRoom) {
+            this.activeRoom.disconnect();
+            this.activeRoom = null;
+        }
+    }
 }
